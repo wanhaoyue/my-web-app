@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+
+permissions:
+    id-token: write   # required for OIDC
+    contents: read
+
 # Change these to match your setup
 env:
   AWS_REGION: ap-southeast-5
@@ -44,9 +49,6 @@ jobs:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write   # required for OIDC
-      contents: read
     steps:
       - name: Check out code
         uses: actions/checkout@v4
