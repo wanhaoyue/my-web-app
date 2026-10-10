@@ -327,7 +327,7 @@ After editing and saving your files:
 ```bash
 # 1. Commit and push the source code
 git add .
-git commit -m "Describe your change"
+git commit -m "Change n-xxx"
 git push
 
 # 2. Log in to ECR (valid for 12 hours)
@@ -356,7 +356,7 @@ Wait one to two minutes, then hard-refresh the browser (Ctrl+F5).
 
 ## Troubleshooting: Errors and Solutions
 
-### 1. Service deployment failed: circuit breaker triggered
+### 1. **Service deployment failed: circuit breaker triggered**
 
 **Symptoms**
 
