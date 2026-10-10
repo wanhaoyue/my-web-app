@@ -43,38 +43,7 @@ This project covers the full path from code to a running container on AWS, inclu
 ## Architecture
 
 ### Deployment flow
-
-```mermaid
-flowchart LR
-    DEV["Developer<br/>VS Code"] -->|git push| GH["GitHub Repository"]
-    DEV -->|docker build| IMG["Local Docker Image"]
-    IMG -->|docker push| ECR["Amazon ECR<br/>Image Registry"]
-    DEV -->|aws ecs update-service<br/>force-new-deployment| ECS
-
-    subgraph AWS["AWS Cloud (ap-southeast-5)"]
-        ECR -->|pull image| EC2
-        subgraph ECS["Amazon ECS Cluster"]
-            SVC["ECS Service"] --> TASK["Task Definition<br/>container: web, port 5000"]
-        end
-        subgraph VPC["VPC / Public Subnet"]
-            EC2["EC2 Container Instance<br/>ECS agent"]
-            SG["Security Group<br/>inbound TCP 80"]
-        end
-        TASK --> EC2
-        SG --- EC2
-    end
-
-    USER["User Browser"] -->|"http://public-ip:80"| SG
-```
-
-### Request path
-
-```mermaid
-flowchart LR
-    B["Browser"] -->|"HTTP :80"| SG["Security Group"]
-    SG --> H["EC2 Host :80"]
-    H -->|"bridge network mapping<br/>80 to 5000"| C["Docker Container<br/>gunicorn + Flask :5000"]
-```
+<img width="2493" height="839" alt="my-web-app drawio" src="https://github.com/user-attachments/assets/ddfd2b4b-4d5b-45eb-960c-aae1e817dbc4" />
 
 ### Application flow
 
