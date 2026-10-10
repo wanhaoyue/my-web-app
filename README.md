@@ -1,4 +1,4 @@
-# Customer Sentiment Analyzer: Flask App on AWS ECS (EC2 Launch Type)
+# Simple Sentiment Analyzer: Flask App on AWS ECS (EC2 Launch Type)
 
 A Python Flask web application that analyzes the sentiment of customer feedback using **TextBlob**. Users type a review or comment into a web page and instantly get a sentiment label (Positive / Negative / Neutral) with polarity and subjectivity scores.
 
