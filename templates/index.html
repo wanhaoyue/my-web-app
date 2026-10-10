@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Sentiment Analyzer</title>
+    <!-- Bootstrap 5 CSS CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <div class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card shadow border-0 rounded-4">
+                    <div class="card-body p-4 p-md-5">
+                        <div class="text-center mb-4">
+                            <h1 class="h3 fw-bold text-primary">Customer Sentiment Analyzer</h1>
+                            <p class="text-muted">Type feedback, reviews, or comments below to analyze sentiment instantly using AI.</p>
+                        </div>
+
+                        <div class="mb-3">
+                            <textarea id="userInput" class="form-control" rows="4" placeholder="e.g., I absolutely hate this product! The service was terrible and slow."></textarea>
+                        </div>
+
+                        <div class="d-grid mb-4">
+                            <button id="analyzeBtn" class="btn btn-primary btn-lg rounded-3" onclick="analyzeSentiment()">Analyze Sentiment</button>
+                        </div>
+
+                        <!-- Results Card (Hidden by default) -->
+                        <div id="resultContainer" class="card bg-white border rounded-3 p-4 d-none">
+                            <h5 class="fw-semibold mb-3 text-secondary">Analysis Results</h5>
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <span class="text-muted d-block small">Sentiment</span>
+                                    <span id="sentimentBadge" class="badge fs-6 px-3 py-2">--</span>
+                                </div>
+                                <div class="col-md-4">
+                                    <span class="text-muted d-block small">Polarity Score (-1 to 1)</span>
+                                    <strong id="polarityVal" class="fs-5">--</strong>
+                                </div>
+                                <div class="col-md-4">
+                                    <span class="text-muted d-block small">Subjectivity (0 to 1)</span>
+                                    <strong id="subjectivityVal" class="fs-5">--</strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Error Alert -->
+                        <div id="errorAlert" class="alert alert-danger mt-3 d-none" role="alert"></div>
+                    </div>
+                </div>
+                <div class="text-center mt-4 text-muted small">
+                    Powered by Flask & AWS ECS Fargate (v{{ version }})
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript for Handling API Request -->
+    <script>
+        async function analyzeSentiment() {
+            const text = document.getElementById('userInput').value;
+            const btn = document.getElementById('analyzeBtn');
+            const resultContainer = document.getElementById('resultContainer');
+            const errorAlert = document.getElementById('errorAlert');
+
+            // Reset UI states
+            errorAlert.classList.add('d-none');
+            resultContainer.classList.add('d-none');
+
+            if (!text.trim()) {
+                errorAlert.textContent = "Please enter some text to analyze.";
+                errorAlert.classList.remove('d-none');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = "Analyzing...";
+
+            try {
+                const response = await fetch('/api/sentiment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Something went wrong');
+                }
+
+                // Populate results
+                const badge = document.getElementById('sentimentBadge');
+                badge.textContent = data.sentiment;
+                badge.className = `badge fs-6 px-3 py-2 bg-${data.badge_color}`;
+
+                document.getElementById('polarityVal').textContent = data.polarity;
+                document.getElementById('subjectivityVal').textContent = data.subjectivity;
+
+                resultContainer.classList.remove('d-none');
+            } catch (err) {
+                errorAlert.textContent = err.message;
+                errorAlert.classList.remove('d-none');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "Analyze Sentiment";
+            }
+        }
+    </script>
+</body>
+</html>
