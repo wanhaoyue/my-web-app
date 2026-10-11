@@ -3,15 +3,28 @@ name: CI/CD - Test, Build, Deploy to ECS
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "terraform/**"
+      - "**.md"
   pull_request:
     branches: [main]
 
-# Change these to match your setup
+permissions:
+  contents: read
+
+# Never run two deployments at the same time
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+# These names match the defaults in terraform/main.tf (var.app_name)
 env:
   AWS_REGION: ap-southeast-5
   ECR_REPOSITORY: my-web-app
   ECS_CLUSTER: my-web-app
-  ECS_SERVICE: my-web-app-task_definition-service-21uo6b0o 
+  ECS_SERVICE: my-web-app
+  TASK_FAMILY: my-web-app
+  CONTAINER_NAME: my-web-app
 
 jobs:
   # ---------- CI: runs on every push and pull request ----------
@@ -45,7 +58,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
-      id-token: write   # required for OIDC
+      id-token: write # required for OIDC
       contents: read
     steps:
       - name: Check out code
@@ -61,26 +74,74 @@ jobs:
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build and push image
-        env:
-          REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-        run: |
-          IMAGE="$REGISTRY/$ECR_REPOSITORY"
-          docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
-          docker push "$IMAGE:${{ github.sha }}"
-          docker push "$IMAGE:latest"
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Force new ECS deployment
+      # Take the current task definition from ECS, swap in the new image
+      - name: Download current task definition
         run: |
-          aws ecs update-service \
-            --cluster "$ECS_CLUSTER" \
-            --service "$ECS_SERVICE" \
-            --force-new-deployment \
-            --no-cli-pager > /dev/null
+          aws ecs describe-task-definition \
+            --task-definition "$TASK_FAMILY" \
+            --query taskDefinition > task-definition.json
 
-      - name: Wait for service to become stable
+      - name: Render new task definition
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          environment-variables: |
+            APP_VERSION=${{ github.sha }}
+
+      # Registers a new revision, updates the service, waits until stable.
+      # The circuit breaker in Terraform rolls back automatically on failure.
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          service: ${{ env.ECS_SERVICE }}
+          wait-for-service-stability: true
+
+      # Confirm the new version is really live
+      - name: Smoke test
         run: |
-          aws ecs wait services-stable \
-            --cluster "$ECS_CLUSTER" \
-            --services "$ECS_SERVICE"
-          echo "Deployment complete."
+          TASK_ARN=$(aws ecs list-tasks \
+            --cluster "$ECS_CLUSTER" --service-name "$ECS_SERVICE" \
+            --desired-status RUNNING --query 'taskArns[0]' --output text)
+
+          ENI=$(aws ecs describe-tasks \
+            --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" \
+            --query "tasks[0].attachments[0].details[?name=='networkInterfaceId'].value | [0]" \
+            --output text)
+
+          IP=$(aws ec2 describe-network-interfaces \
+            --network-interface-ids "$ENI" \
+            --query 'NetworkInterfaces[0].Association.PublicIp' --output text)
+
+          echo "Task public IP: $IP"
+
+          RESPONSE=$(curl -fsS --retry 10 --retry-delay 5 --retry-connrefused \
+            "http://$IP:5000/health")
+          echo "$RESPONSE"
+
+          DEPLOYED=$(echo "$RESPONSE" | jq -r '.version')
+          if [ "$DEPLOYED" != "${{ github.sha }}" ]; then
+            echo "Version mismatch: expected ${{ github.sha }}, got $DEPLOYED"
+            exit 1
+          fi
+
+          echo "### Deployed ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "App URL: http://$IP:5000" >> "$GITHUB_STEP_SUMMARY"
